@@ -8,8 +8,6 @@ from config import *
 
 
 class DataManager:
-    """데이터 관리를 담당하는 클래스 - 파일 입출력 및 메모리 관리"""
-    
     @staticmethod
     def load_json(file):
         if os.path.exists(file):
@@ -37,9 +35,7 @@ class DataManager:
         return s
 
 
-class MemoryManager:
-    """기억 관련 데이터를 관리하는 클래스"""
-    
+class MemoryManager:    
     def __init__(self):
         self.data_manager = DataManager()
         self.ensure_memory_files()
@@ -67,7 +63,6 @@ class MemoryManager:
 
 
 class AIManager:
-    """AI 호출을 관리하는 클래스"""
     
     @staticmethod
     def call_ai(prompt='테스트', system='지침', history=None, fine=None, api_key=None, retries=0):
@@ -100,7 +95,6 @@ class AIManager:
 
 
 class AuxiliaryAI:
-    """보조 인공지능 - 시스템의 전체적인 기억 관리와 대화 흐름 제어"""
     
     def __init__(self, memory_manager):
         self.memory_manager = memory_manager
@@ -242,7 +236,6 @@ AI: {ai_content}
 
 
 class LoadAI:
-    """로드 인공지능 - 주제별로 분할된 기억을 전담하는 개별 인공지능"""
     
     def __init__(self, memory_manager):
         self.memory_manager = memory_manager
@@ -346,8 +339,6 @@ class LoadAI:
 
 
 class MainAI:
-    """메인 인공지능 - 사용자와 직접 대화하는 주체"""
-    
     def __init__(self):
         self.memory_manager = MemoryManager()
         self.auxiliary_ai = AuxiliaryAI(self.memory_manager)
@@ -412,24 +403,7 @@ if __name__ == '__main__':
     main_ai_instance = MainAI()
 
     Q = [
-        "내 이름은 서재민이다.",
-        "내가 다니는 고등학교는 대건고등학교이다.",
-        "내가 좋아하는 과목은 수학이다.",
-        "내 취미는 독서이다.",
-        "가장 친한 친구는 김철수이다.",
-        "사과에 대해서 궁금하다",
-        "사과의 씨에는 독이 있는가?",
-        "나는 사과에 대해서 부정적으로 생각한다.",
-        "포도에 대해서 궁금하다.",
-        "포도의 씨에는 독이 있는가?",
-        "나는 포도에 대해서 부정적으로 생각한다. 왜냐하면 포다는 한 송이이지만 알맹이 모두 맛이 다르기 때문이다.",
-        "나는 딸기 또한 부정적으로 생각한다. 왜냐하면 딸기는 너무 비싸기 때문이다.",
-        "딸기가 왜 비싼지 아는가?",
-        "저번에 내 이름이 뭐라고?",
-        "저번에 나에 대한 소개를 했는데, 나에 대한 아는 정보를 모두 말해라.",
-        "내가 사과를 싫어하는 이유는?",
-        "저번애 내가 포도를 싫어하는 이유를 말했다. 그 내용이 무엇인가?"
-        "저번에 내가 딸기를 싫어하는 이유를 말했다. 그 내용이 무엇인가?"
+        # 질문 예시 작성
     ]
 
     for q in Q:
