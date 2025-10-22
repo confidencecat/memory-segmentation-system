@@ -16,21 +16,9 @@ def prd(PR):
     print(PR)
     print('=' * len(PR))
 
-# LOAD API 키들을 자동으로 로드
-LOAD_API_KEYS = []
-i = 1
-while True:
-    key = os.getenv(f'LOAD_{i}')
-    
-    if not key:
-        break
-    LOAD_API_KEYS.append(key)
-    i += 1
-
-API_KEY = {
-    'API_1': os.getenv('API_1'),
-    'API_2': os.getenv('API_2'),
-}
+# API 키 로드 (각각 하나씩)
+API_KEY = os.getenv('API_KEY')
+LOAD_KEY = os.getenv('LOAD_KEY')
 
 JUDGEFINE = [
     ["저번에 우리가 사과의 기원에 대해서 이야기 했었지?", "True"],

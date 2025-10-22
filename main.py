@@ -67,7 +67,7 @@ class AIManager:
     @staticmethod
     def call_ai(prompt='테스트', system='지침', history=None, fine=None, api_key=None, retries=0):
         if api_key is None:
-            api_key = API_KEY['API_1']
+            api_key = API_KEY
 
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(GEMINI_MODEL, system_instruction=system)
@@ -103,40 +103,67 @@ class AuxiliaryAI:
     
     def manage_memory(self, conversation):
         
+        print(f"\n[DEBUG] ===== 메모리 관리 시작 =====")
+        
         self.memory_manager.save_to_all_memory(conversation)
+        print(f"[DEBUG] 전체 메모리에 대화 저장 완료")
         
         buf_counter, con_counter = self.memory_manager.get_env_counters()
+        print(f"[DEBUG] 현재 카운터 - BUF: {buf_counter}, CON: {con_counter}")
         
         current_summary = self.memory_manager.data_manager.load_json(SUM_MEMORY) if os.path.exists(SUM_MEMORY) else None
         
         if not current_summary:
+            print(f"[DEBUG] 기존 요약 없음 - 첫 번째 대화 세션 시작")
             new_summary = self.create_comprehensive_summary(conversation)
+            print(f"[DEBUG] 생성된 요약: {new_summary[:100]}...")
             self.memory_manager.data_manager.save_json(SUM_MEMORY, new_summary)
             
             buf_memory = self.memory_manager.data_manager.load_json(BUF_MEMORY)
             buf_memory.append(conversation)
             self.memory_manager.data_manager.save_json(BUF_MEMORY, buf_memory)
+            print(f"[DEBUG] 버퍼 메모리에 대화 추가 (현재 버퍼 크기: {len(buf_memory)})")
+            print(f"[DEBUG] ===== 메모리 관리 완료 =====\n")
             return
+        
+        print(f"[DEBUG] 기존 요약 존재: {current_summary[:100]}...")
+        print(f"[DEBUG] 주제 변경 감지 시작...")
         
         topic_changed = self.detect_topic_change(current_summary, conversation)
         
+        print(f"[DEBUG] ===== 주제 변경 감지 결과: {topic_changed} =====")
+        
         if topic_changed:
+            print(f"[DEBUG] !!! 주제 변경 감지됨 - 버퍼를 분리 메모리로 이동 !!!")
+            print(f"[DEBUG] 이동할 요약: {current_summary[:100]}...")
+            
             self.move_to_separated_memory(current_summary, buf_counter, con_counter)
+            print(f"[DEBUG] 분리 메모리 이동 완료 (BUF_NUM: {buf_counter}, CON_NUM: {con_counter})")
             
             new_summary = self.create_comprehensive_summary(conversation)
+            print(f"[DEBUG] 새로운 주제의 요약 생성: {new_summary[:100]}...")
             self.memory_manager.data_manager.save_json(SUM_MEMORY, new_summary)
             self.memory_manager.data_manager.save_json(BUF_MEMORY, [conversation])
+            print(f"[DEBUG] 버퍼 메모리 초기화 완료 (새 대화로 시작)")
             
             self.memory_manager.update_env_counters(buf_counter + 1, con_counter + 1)
+            print(f"[DEBUG] 카운터 업데이트 - BUF: {buf_counter + 1}, CON: {con_counter + 1}")
         else:
+            print(f"[DEBUG] 주제 연속성 확인 - 기존 버퍼에 추가")
+            
             updated_summary = self.update_summary(current_summary, conversation)
+            print(f"[DEBUG] 요약 업데이트 완료: {updated_summary[:100]}...")
             self.memory_manager.data_manager.save_json(SUM_MEMORY, updated_summary)
             
             buf_memory = self.memory_manager.data_manager.load_json(BUF_MEMORY)
             buf_memory.append(conversation)
             self.memory_manager.data_manager.save_json(BUF_MEMORY, buf_memory)
+            print(f"[DEBUG] 버퍼 메모리에 대화 추가 (현재 버퍼 크기: {len(buf_memory)})")
             
             self.memory_manager.update_env_counters(buf_counter, con_counter + 1)
+            print(f"[DEBUG] 대화 카운터 업데이트 - CON: {con_counter + 1}")
+        
+        print(f"[DEBUG] ===== 메모리 관리 완료 =====\n")
     
     def create_comprehensive_summary(self, conversation):
         system_prompt = """당신은 대화 내용을 정확하고 포괄적으로 요약하는 전문가다.
@@ -211,6 +238,9 @@ AI: {ai_content}
         user_content = new_conversation[0]['content']
         ai_content = new_conversation[1]['content']
         
+        print(f"[DEBUG] 주제 변경 감지 - 사용자 입력: {user_content[:50]}...")
+        print(f"[DEBUG] 주제 변경 감지 - AI 응답: {ai_content[:50]}...")
+        
         prompt = f"""기존 대화 요약: {current_summary}
 
 새로운 대화:
@@ -220,16 +250,24 @@ AI: {ai_content}
 위 새로운 대화가 기존 요약의 주제와 크게 다른지 판단하라."""
         
         result = self.ai_manager.call_ai(prompt=prompt, system=system_prompt, fine=SEPFINE)
+        print(f"[DEBUG] 주제 변경 감지 AI 응답: {result.strip()}")
+        
         return result.strip() == 'True'
     
     def move_to_separated_memory(self, summary, buf_counter, con_counter):
+        print(f"[DEBUG] 분리 메모리로 이동 시작...")
         sep_memory = self.memory_manager.data_manager.load_json(SEP_MEMORY)
-        sep_memory.append([{
+        
+        new_entry = {
             'SUMMARIZATION': summary,
             'NUM': buf_counter,
             'LOAD': con_counter
-        }])
+        }
+        
+        sep_memory.append([new_entry])
         self.memory_manager.data_manager.save_json(SEP_MEMORY, sep_memory)
+        
+        print(f"[DEBUG] 분리 메모리 저장 완료 - 총 {len(sep_memory)}개의 세그먼트")
     
     def retrieve_relevant_memories(self, user_query):
         return self.load_ai.search_memories(user_query)
@@ -255,16 +293,39 @@ class LoadAI:
             all_summaries.append(('current', current_summary))
         
         if not all_summaries:
+            print("[DEBUG] 검색할 메모리가 없습니다.")
             return None
         
-        print("start_load")
+        print(f"\n[DEBUG] ===== 메모리 검색 시작 =====")
+        print(f"[DEBUG] 사용자 쿼리: {query}")
+        print(f"[DEBUG] 검색 대상 요약 개수: {len(all_summaries)}")
+        print(f"[DEBUG] 병렬 처리 시작...")
+        
         related_indices = self.find_relevant_summaries_async(all_summaries, query)
-        print("end_load")
+        
+        print(f"[DEBUG] 병렬 처리 완료")
+        print(f"[DEBUG] 관련 메모리 인덱스: {related_indices}")
+        print(f"[DEBUG] 발견된 관련 메모리 개수: {len(related_indices)}")
 
         if not related_indices:
+            print("[DEBUG] 관련 메모리를 찾지 못했습니다.")
             return None
         
-        return self.extract_conversation_data(related_indices, sep_memory)
+        conversation_data = self.extract_conversation_data(related_indices, sep_memory)
+        
+        if conversation_data:
+            print(f"[DEBUG] 추출된 대화 수: {len(conversation_data)}")
+            print(f"[DEBUG] 추출된 대화 내용:")
+            for i, conv in enumerate(conversation_data[:5]):  # 처음 5개만 출력
+                print(f"  [{i+1}] {conv['role']}: {conv['content'][:50]}...")
+            if len(conversation_data) > 5:
+                print(f"  ... (총 {len(conversation_data)}개의 대화)")
+        else:
+            print("[DEBUG] 대화 데이터 추출 실패")
+        
+        print(f"[DEBUG] ===== 메모리 검색 완료 =====\n")
+        
+        return conversation_data
     
     def find_relevant_summaries_async(self, summaries_with_index, query):
         system_prompt = """당신은 사용자의 질문과 요약 데이터의 연관성을 판단하는 전문가다.
@@ -272,32 +333,34 @@ class LoadAI:
         
         related_indices = []
         
-        available_api_keys = list(API_KEY.values())
+        # 하나의 API 키로 병렬 처리
         num_summaries = len(summaries_with_index)
-        num_api_keys = len(available_api_keys)
+        max_workers = min(10, num_summaries)  # 최대 10개의 스레드로 병렬 처리
         
-        api_key_assignments = []
-        for i, (idx, summary) in enumerate(summaries_with_index):
-            assigned_api_key = available_api_keys[i % num_api_keys]
-            api_key_assignments.append((idx, summary, assigned_api_key))
+        print(f"[DEBUG] 병렬 처리 설정: {max_workers}개의 워커 사용")
         
-        max_workers = min(1, num_summaries, num_api_keys)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 모든 요약에 대해 동일한 LOAD_KEY 사용
             future_to_idx = {
-                executor.submit(self.check_single_relevance, query, summary, system_prompt, api_key): idx
-                for idx, summary, api_key in api_key_assignments
+                executor.submit(self.check_single_relevance, query, summary, system_prompt, LOAD_KEY): idx
+                for idx, summary in summaries_with_index
             }
             
+            print(f"[DEBUG] {len(future_to_idx)}개의 비동기 작업 제출 완료")
+            
+            completed = 0
             for future in concurrent.futures.as_completed(future_to_idx):
                 idx = future_to_idx[future]
+                completed += 1
                 try:
                     is_related = future.result()
                     
+                    print(f"[DEBUG] [{completed}/{num_summaries}] 인덱스 {idx} 처리 완료: {is_related}")
+                    
                     if is_related:
-                        print(f"index : {idx} : {is_related}")
                         related_indices.append(idx)
                 except Exception as e:
-                    pass
+                    print(f"[DEBUG] 인덱스 {idx} 처리 중 오류: {str(e)}")
         
         return related_indices
 
@@ -305,19 +368,28 @@ class LoadAI:
         return self.find_relevant_summaries_async(summaries_with_index, query)
     
     def check_single_relevance(self, query, summary, system_prompt, api_key=None):
+        print(f"[DEBUG] API 호출 시작 - 요약 길이: {len(summary)} 문자")
+        
         prompt = f"사용자 질문: {query}\n요약 데이터: {summary}\n\n위 질문과 요약 데이터가 관련이 있는지 판단하라."
         
         result = self.ai_manager.call_ai(prompt=prompt, system=system_prompt, fine=ISSAMEFINE, api_key=api_key)
+        
+        print(f"[DEBUG] API 응답: {result.strip()}")
 
         return result.strip() == 'True'
     
     def extract_conversation_data(self, related_indices, sep_memory):
+        print(f"\n[DEBUG] ===== 대화 데이터 추출 시작 =====")
+        print(f"[DEBUG] 추출할 인덱스: {related_indices}")
+        
         all_memory = self.memory_manager.data_manager.load_json(ALL_MEMORY)
         conversation_data = []
         
         for idx in related_indices:
             if idx == 'current':
+                print(f"[DEBUG] 현재 버퍼 메모리에서 대화 추출 중...")
                 buf_memory = self.memory_manager.data_manager.load_json(BUF_MEMORY)
+                print(f"[DEBUG] 버퍼 메모리 대화 개수: {len(buf_memory)}")
                 for conv in buf_memory:
                     if isinstance(conv, list):
                         conversation_data.extend(conv)
@@ -329,11 +401,17 @@ class LoadAI:
                     start_idx = 0 if idx == 0 else sep_memory[idx-1][0]['LOAD'] + 1
                     end_idx = entry['LOAD'] + 1
                     
+                    print(f"[DEBUG] 인덱스 {idx} - 대화 범위: {start_idx} ~ {end_idx}")
+                    print(f"[DEBUG] 요약: {entry['SUMMARIZATION'][:50]}...")
+                    
                     for conv in all_memory[start_idx:end_idx]:
                         if isinstance(conv, list):
                             conversation_data.extend(conv)
                         else:
                             conversation_data.extend([conv[0], conv[1]])
+        
+        print(f"[DEBUG] 총 추출된 대화 수: {len(conversation_data)}")
+        print(f"[DEBUG] ===== 대화 데이터 추출 완료 =====\n")
         
         return conversation_data if conversation_data else None
 
@@ -349,22 +427,34 @@ class MainAI:
         if not user_input or user_input.strip() == 'False':
             return 'NONE'
         
+        print(f"\n[DEBUG] ===== 새로운 대화 시작 =====")
+        print(f"[DEBUG] 사용자 입력: {user_input}")
+        
         needs_memory = self.check_memory_need(user_input)
+        print(f"[DEBUG] 메모리 필요 여부: {needs_memory}")
         
         if needs_memory:
             relevant_memories = self.auxiliary_ai.retrieve_relevant_memories(user_input)
             if relevant_memories:
+                print(f"[DEBUG] 메모리를 사용하여 응답 생성 중...")
                 response = self._generate_response_with_memory(user_input, relevant_memories)
             else:
+                print(f"[DEBUG] 관련 메모리 없음 - 일반 응답 생성")
                 response = self._generate_simple_response(user_input)
         else:
+            print(f"[DEBUG] 메모리 불필요 - 일반 응답 생성")
             response = self._generate_simple_response(user_input)
+        
+        print(f"[DEBUG] AI 응답 생성 완료")
         
         conversation = [
             {'role': 'user', 'content': user_input},
             {'role': 'assistant', 'content': response}
         ]
         self.auxiliary_ai.manage_memory(conversation)
+        
+        print(f"[DEBUG] 메모리 저장 완료")
+        print(f"[DEBUG] ===== 대화 종료 =====\n")
         
         return response
     
@@ -402,18 +492,47 @@ def main_ai(prompt='False'):
 if __name__ == '__main__':
     main_ai_instance = MainAI()
 
-    Q = [
-        # 질문 예시 작성
-    ]
+    
+    # Q = [
+    #     # 사과 관련 주제
+    #     "사과는 어떤 과일인가?",
+    #     "사과의 영양소에 대해 알려줘",
+    #     "사과 씨앗은 먹어도 되나?",
+        
+    #     # 동물 관련 주제
+    #     "고양이의 특징을 설명해줘",
+    #     "고양이는 하루에 몇 시간 자나?",
+    #     "고양이가 좋아하는 음식은 뭐야?",
+        
+    #     # 내가 가장 좋아하는 숫자는
+    #     "내가 가장 좋아하는 숫자는 2147483648이다.",
+    #     "내가 가장 싫어하는 숫자는 -2147483649이다.",
 
-    for q in Q:
-        response = main_ai_instance.chat(q)
-        print(f"Q: {q}\nA: {response}\n")
+    #     # 가구 관련 주제
+    #     "책상의 일반적인 높이는 얼마인가?",
+    #     "책상을 선택할 때 고려해야 할 점은?",
+    #     "책상 재질별 장단점을 알려줘",
+        
+    #     # 건물 관련 주제
+    #     "에펠탑은 어디에 있나?",
+    #     "에펠탑의 높이는 얼마나 되나?",
+    #     "에펠탑은 언제 건설되었나?",
+        
+    #     # 과거 기억 검색 테스트
+    #     "아까 사과에 대해 뭐라고 했지?",
+    #     "고양이 잠자는 시간 다시 알려줘",
+    #     "책상 높이가 어떻게 된다고 했어?",
+    #     "에펠탑 정보 정리해서 다시 말해줘"
+    # ]
 
-    # while True:
-    #     user_input = input("사용자: ")
-    #     if user_input.lower() in ['exit', 'quit', '종료', '그만']:
-    #         print("AI: 대화를 종료합니다.")
-    #         break
-    #     response = main_ai_instance.chat(user_input)
-    #     print(f"AI: {response}")
+    # for q in Q:
+    #     response = main_ai_instance.chat(q)
+    #     print(f"Q: {q}\nA: {response}\n")
+
+    while True:
+        user_input = input("사용자: ")
+        if user_input.lower() in ['exit', 'quit', '종료', '그만']:
+            print("AI: 대화를 종료합니다.")
+            break
+        response = main_ai_instance.chat(user_input)
+        print(f"AI: {response}")
